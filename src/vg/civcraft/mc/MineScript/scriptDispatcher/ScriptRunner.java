@@ -19,14 +19,14 @@ public class ScriptRunner extends Thread{
     private GroovyShell shell = new GroovyShell(binding, compilerConfiguration);
     private GroovyWhiteList whiteList = new GroovyWhiteList();
 
-    private String code;
+    private String code = "";
 
     public ScriptRunner() {
         initSandBox();
     }
 
     public void loadCode(String code) {
-        this.code = code;
+        this.code += '\n' + code;
     }
 
     public void allowAndBind(RemoteAPI api, String name) {
@@ -35,8 +35,10 @@ public class ScriptRunner extends Thread{
         binding.setVariable(name, api);
     }
 
-    public void allow(Class<? extends RemoteAPI> api) {
-        whiteList.allow(api.getClass());
+    public void allow(Class api) {
+        code =  "import " + api.getName() + ";\n" + code;
+        System.out.println(code);
+        whiteList.allow(api);
     }
 
     public void runScript() {

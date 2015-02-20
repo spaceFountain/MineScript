@@ -1,5 +1,7 @@
 package vg.civcraft.mc.MineScript.scriptDispatcher;
 
+import vg.civcraft.mc.MineScript.apis.RemoteAPI;
+
 import java.net.MalformedURLException;
 import java.rmi.Naming;
 import java.rmi.RemoteException;
@@ -15,7 +17,10 @@ import java.util.Set;
 public class ScriptStarter extends UnicastRemoteObject implements RemoteScriptStarter {
     public static final int port = 1099;
     public volatile RemoteScript[] scripts;
+    private volatile Set<Integer> shouldStart = new HashSet<Integer>();
     public volatile Set<ScriptManager> managers;
+
+    private Set<APIAndName> allowedAPIs = new HashSet<APIAndName>();
     private long maxRAM; // todo: implement these options
     private int maxScripts;
     private int nextID = 0;
@@ -77,6 +82,28 @@ public class ScriptStarter extends UnicastRemoteObject implements RemoteScriptSt
     }
 
     @Override
+    public int startAndRun(String code, int tenthsOfPercentCPU, long maxRAM) throws RemoteException {
+        shouldStart.add(nextID);
+        return start(code, tenthsOfPercentCPU, maxRAM);
+    }
+
+    @Override
+    public void addDefaultAPI(RemoteAPI library, String name) throws RemoteException {
+        allowedAPIs.add(new APIAndName(name ,library));
+    }
+
+    private static class APIAndName {
+        private final String name;
+        public String Name;
+        public RemoteAPI api;
+
+        public APIAndName(String name, RemoteAPI api) {
+            this.name = name;
+            this.api = api;
+        }
+    }
+
+    @Override
     public RemoteScript getScript(int id) throws RemoteException {
         System.out.println("getting "+id);
         return scripts[id];
@@ -86,5 +113,12 @@ public class ScriptStarter extends UnicastRemoteObject implements RemoteScriptSt
     public void scriptCreated(RemoteScript script, int id) throws RemoteException {
         System.out.println("setting "+id);
         scripts[id] = script;
+        for (APIAndName apiAndName: allowedAPIs) {
+            script.addAPI(apiAndName.api, apiAndName.name);
+        }
+        if (shouldStart.contains(id)) {
+            script.start();
+            shouldStart.remove(id);
+        }
     }
 }

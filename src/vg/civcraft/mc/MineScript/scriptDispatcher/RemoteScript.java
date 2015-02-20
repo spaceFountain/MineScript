@@ -15,5 +15,5 @@ public interface RemoteScript extends Remote {
     void addAPI(RemoteAPI library, String name) throws RemoteException;
     void removeAPI(String name) throws RemoteException;
     void registerEvent() throws RemoteException;
-    void addAPI(Class<? extends RemoteAPI> library) throws RemoteException;
+    void addAPI(Class library) throws RemoteException;
 }

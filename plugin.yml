@@ -1,0 +1,4 @@
+name: MineScript
+version: 0.0.1
+main: vg.civcraft.mc.MineScript.MineScriptPlugin
+depend: [BlockMeta]

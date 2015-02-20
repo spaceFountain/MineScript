@@ -8,6 +8,8 @@ import java.io.Serializable;
 public enum  Direction implements Serializable {
     UP,
     DOWN,
-    RIGHT,
-    LEFT
+    EAST,
+    WEST,
+    NORTH,
+    SOUTH
 }

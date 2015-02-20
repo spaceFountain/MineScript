@@ -44,7 +44,7 @@ public class Script extends UnicastRemoteObject implements RemoteScript {
     }
 
     @Override
-    public void addAPI(Class<? extends RemoteAPI> library) throws RemoteException {
+    public void addAPI(Class library) throws RemoteException {
         runner.queue.scheduleCall(new MethodCall(runner, "allow", library));
     }
 
