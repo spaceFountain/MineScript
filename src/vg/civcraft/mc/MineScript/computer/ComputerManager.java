@@ -28,7 +28,7 @@ public class ComputerManager implements Listener{
     Set<Robot> activeRobots = new HashSet<Robot>();
 
     public ComputerManager() {
-        BlockMetaPlugin.getManager().registerItemToBlock(new ItemType(Material.DISPENSER, (short) 0, ""), new BlockType(Material.DISPENSER));
+        BlockMetaPlugin.getManager().registerItemToBlock(new ItemType(Material.DISPENSER, (short) 0, ""), Robot.type);
         try {
             starter = (RemoteScriptStarter) Naming.lookup("//localhost/ScriptStarter");
         } catch (NotBoundException e) {
@@ -44,18 +44,15 @@ public class ComputerManager implements Listener{
     public void handleInteract(PlayerInteractEvent event) {
         if (event.isCancelled() || event.getItem() == null)
             return;
-        MineScriptPlugin.logger.info(event.getItem().getType().toString() + " " + event.getAction().toString());
+
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            MineScriptPlugin.logger.info("Action.RIGHT_CLICK_BLOCK");
             ItemType clickedWith = new ItemType(event.getItem());
             MineScriptPlugin.logger.info(clickedWith.toString());
             MineScriptPlugin.logger.info(new ItemType(Material.STICK, (short) 0, "").toString());
             if (clickedWith.equals(new ItemType(Material.STICK, (short) 0, ""))) {
-                MineScriptPlugin.logger.info("Material.STICK");
                 BlockType blockType = new BlockType(event.getClickedBlock());
 
-                if (blockType.getMeta() == "" && blockType.getType() == Material.DISPENSER) {
-                    MineScriptPlugin.logger.info("Material.DISPENSER");
+                if (blockType.getMeta().equals(Robot.type.getMeta()) && blockType.getType() == Robot.type.getType()) {
                     MineScriptPlugin.logger.info("starting computer");
 
                     try {

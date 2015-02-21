@@ -1,5 +1,6 @@
 package vg.civcraft.mc.MineScript.computer;
 
+import net.minecraft.server.v1_7_R4.Item;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -41,13 +42,14 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
     private RemoteScript script = null;
     private Direction direction = Direction.DOWN;
 
-    protected static BlockType type = new BlockType(Material.DISPENSER);
+    protected static BlockType type = new BlockType(Material.DISPENSER, (byte) 0, "robot");
 
     public Robot(Location location, ComputerManager manager) throws RemoteException {
         super(0);
         this.location = location;
         this.manager = manager;
         this.block = location.getBlock();
+        direction = Direction.fromFace(((DirectionalContainer) ((Dispenser) block.getState()).getData()).getFacing());
     }
 
     private boolean correctType() {
@@ -90,28 +92,7 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
      * @return the Block the robot is facing
      */
     private Block getBlockInFront(){
-        BlockFace face = BlockFace.DOWN;
-        switch (direction) {
-            case DOWN:
-                face = BlockFace.DOWN;
-                break;
-            case UP:
-                face = BlockFace.UP;
-                break;
-            case WEST:
-                face = BlockFace.WEST;
-                break;
-            case EAST:
-                face = BlockFace.EAST;
-                break;
-            case NORTH:
-                face = BlockFace.NORTH;
-                break;
-            case SOUTH:
-                face = BlockFace.SOUTH;
-                break;
-        }
-        return block.getRelative(face);
+        return block.getRelative(direction.toFace());
     }
 
     /**
@@ -157,7 +138,7 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
             Thread thread = new Thread() {
                 @Override
                 public void run() {
-                    for (int attempt = 0; attempt < 10; ++attempt) {
+                    for (int attempt = 0; attempt < 20; ++attempt) {
                         try {
                             MineScriptPlugin.logger.info("on attempt "+ attempt);
                             script = manager.starter.getScript(scriptID);
@@ -192,55 +173,47 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
 
     @Override
     public boolean move() throws RemoteException {
-        return false;
-    }
-
-    @Override
-    public void turnTo(final Direction newDirection) throws RemoteException {
-        Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Object>(){
-            @Override
-            public Object call() {
-                direction = newDirection;
-                byte data = 0;
-                switch (direction) {
-                    case DOWN:
-                        data = 0;
-                        break;
-                    case UP:
-                        data = 1;
-                        break;
-                    case WEST:
-                        data = 4;
-                        break;
-                    case EAST:
-                        data = 5;
-                        break;
-                    case NORTH:
-                        data = 2;
-                        break;
-                    case SOUTH:
-                        data = 3;
-                        break;
-                }
-                block.setData(data);
-                return null;
-            }
-        });
-    }
-
-    @Override
-    public boolean placeBlock(final RemoteItemSlot slot) throws RemoteException{
         try {
-            return Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Boolean>(){
+            boolean result = Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Boolean>(){
                 @Override
-                public Boolean call() throws RemoteException {
-                    Block placingInto = getBlockInFront();
-                    if (slot.getType().equals(new ItemType(Material.AIR, (short)0, "")))
+                public Boolean call() {
+                    Block newBlock = getBlockInFront();
+                    Location newLocation = newBlock.getLocation();
+                    MineScriptPlugin.logger.info("from " + location + " to " + newLocation);
+
+                    if (!newBlock.isEmpty() && !newBlock.isLiquid())
                         return false;
-                    BlockMetaPlugin.getManager().getBlockForItem(slot.getType()).changeBlockTo(placingInto);
+
+                    if (newLocation.clone().subtract(0, 1, 0).getBlock().isEmpty() &&
+                            location.clone().subtract(0, 1, 0).getBlock().isEmpty()) // the robot can jump and lean over edges
+                        return  false;
+
+                    ItemStack[] items = getInventory().getContents(); // this will be removed as we break the block
+                    getInventory().clear(); // we're removing everything so it doesn't go all over the floor when we break
+                    block.setType(Material.AIR);
+                    block.setData((byte) 0); // this might happen on it's own
+
+                    BlockMetaPlugin.getManager().onBlockBreak(location); // so that it can remove the old entries
+
+                    block = newBlock;
+                    location = newLocation;
+
+                    type.changeBlockTo(block);
+                    getInventory().setContents(items);
+
+                    BlockState blockState = block.getState();
+                    DirectionalContainer directionalContainer = (DirectionalContainer) blockState.getData();
+                    directionalContainer.setFacingDirection(direction.toFace());
+                    blockState.setData(directionalContainer);
+                    blockState.update();
+
+                    MineScriptPlugin.logger.info(block.toString());
+
                     return true;
                 }
             }).get();
+            Thread.sleep(1000); //todo make this configurable
+            return result;
         } catch (InterruptedException e) {
             e.printStackTrace();
         } catch (ExecutionException e) {
@@ -250,9 +223,33 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
     }
 
     @Override
+    public void turnTo(final Direction newDirection) throws RemoteException {
+        try {
+            Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Object>(){
+                @Override
+                public Object call() {
+                    direction = newDirection;
+
+                    BlockState blockState = block.getState();
+                    DirectionalContainer directionalContainer = (DirectionalContainer) blockState.getData();
+                    directionalContainer.setFacingDirection(direction.toFace());
+                    blockState.setData(directionalContainer);
+                    blockState.update();
+                    return null;
+                }
+            }).get(); // even though we don't care about the value we tell it to get the value so that the calling thread waits
+            Thread.sleep(1000); //todo make this configurable
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
     public boolean placeBlock(final int id) throws RemoteException{
         try {
-            return Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Boolean>(){
+            boolean result = Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Boolean>(){
                 @Override
                 public Boolean call() {
                     Block placingInto = getBlockInFront();
@@ -260,10 +257,21 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
                     if (item == null || item.getType() == Material.AIR)
                         return false;
 
-                    BlockMetaPlugin.getManager().getBlockForItem(new ItemType(item)).changeBlockTo(placingInto);
+                    if (!placingInto.isEmpty() && !placingInto.isLiquid())
+                        return false;
+
+                    BlockType type = BlockMetaPlugin.getManager().getBlockForItem(new ItemType(item));
+                    if (type != null) {
+                        type.changeBlockTo(block);
+                    } else {
+                        placingInto.setType(item.getType());
+                        placingInto.setData((byte) item.getDurability());
+                    }
                     return true;
                 }
             }).get();
+            Thread.sleep(1000); //todo make this configurable
+            return result;
         } catch (InterruptedException e) {
             e.printStackTrace();
         } catch (ExecutionException e) {
@@ -273,38 +281,81 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
     }
 
     @Override
-    public BlockType getBlockType(Direction side) throws RemoteException{
+    public BlockType getBlockType(final Direction side) throws RemoteException{
+        try {
+            BlockType result = Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<BlockType>(){
+                @Override
+                public BlockType call() {
+                    return new BlockType(block.getRelative(side.toFace()));
+                }
+            }).get();
+
+            Thread.sleep(1000); //todo make this configurable
+            return result;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
         return null;
     }
 
     @Override
-    public void switchSlots(int a, int b) throws RemoteException{
+    public void switchSlots(final int a, final int b) throws RemoteException{
+        try {
+            Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Object>(){
+                @Override
+                public Object call() {
+                    ItemStack[] inventory = getInventory().getContents();
+                    if (a > inventory.length || b > inventory.length)
+                        return null; //maybe throw an exception so they know what happened.
 
+                    ItemStack temp = inventory[a];
+                    inventory[a] = inventory[b];
+                    inventory[b] = inventory[a];
+                    return null;
+                }
+            }).get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
-    public void switchSlots(RemoteItemSlot a, RemoteItemSlot b) throws RemoteException{
+    public void moveItems(final int a, final int b, final int amount) throws RemoteException{
+        try {
+            Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Object>(){
+                @Override
+                public Object call() {
+                    ItemStack[] inventory = getInventory().getContents();
+                    if (a > inventory.length || b > inventory.length)
+                        return null; //maybe throw an exception so they know what happened.
 
-    }
+                    ItemStack source = inventory[a];
+                    ItemStack destination = inventory[b];
 
-    @Override
-    public void moveItems(RemoteItemSlot from, RemoteItemSlot to, int amount) throws RemoteException{
+                    if (source == null || destination == null || !source.isSimilar(destination)) //we can only move between items of the same type
+                        return null; // todo throw something
 
-    }
+                    if (source.getAmount() < amount) //can't move more items than we have
+                        return null;
 
-    @Override
-    public void moveItems(int from, int to, int amount) throws RemoteException{
+                    if (destination.getAmount() + amount > destination.getMaxStackSize())
+                        return null;
 
-    }
+                    source.setAmount(source.getAmount() - amount);
+                    destination.setAmount(destination.getAmount() + amount);
 
-    @Override
-    public RemoteItemSlot getSlot(int id) throws RemoteException{
-        return null;
-    }
-
-    @Override
-    public int getSlotID(RemoteItemSlot slot) throws RemoteException{
-        return 0;
+                    return null;
+                }
+            }).get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -313,7 +364,53 @@ public class Robot extends UnicastRemoteObject implements Listener, RobotControl
     }
 
     @Override
-    public void equip(RemoteItemSlot slot) {
+    public int getAmount(final int slotID) throws RemoteException {
+        try {
+            return Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<Integer>() {
+                @Override
+                public Integer call() {
+                    ItemStack[] inventory = getInventory().getContents();
+                    if (slotID > inventory.length)
+                        return null; //maybe throw an exception so they know what happened.
+                    ItemStack item = inventory[slotID];
+                    if (item == null) //this is the same as material=air
+                        return 0;
+                    if (item.getType() == Material.AIR) {
+                        return 0;
+                    }
 
+                    return item.getAmount();
+                }
+            }).get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    @Override
+    public ItemType getType(final int slotID) throws RemoteException {
+        try {
+            return Bukkit.getScheduler().callSyncMethod(MineScriptPlugin.self, new Callable<ItemType>(){
+                @Override
+                public ItemType call() {
+                    ItemStack[] inventory = getInventory().getContents();
+                    if (slotID > inventory.length)
+                        return null; //maybe throw an exception so they know what happened.
+                    ItemStack item = inventory[slotID];
+                    if (item == null) //this is the same as material=air
+                        return new ItemType(Material.AIR, (short) 0, "");
+
+                    return new ItemType(item);
+                }
+            }).get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
